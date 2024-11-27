@@ -1,0 +1,30 @@
+name: A6_CLCO_Budget
+runtime: yaml
+
+resources:
+  myBudget:
+    type: azure-native:costmanagement:Budget
+    name: myCLCOAzureBudget
+    properties:
+      scope: '/subscriptions/93c4ea60-6799-4d2a-a717-41e056aa1cdc'
+      amount: 70
+      category: Cost
+      timeGrain: Quarterly
+      timePeriod:
+        startDate: '2024-10-01T00:00:00Z'
+        endDate: '2025-12-31T00:00:00Z'
+      notifications:
+        Actual_GreaterThan_70_Percent:
+          enabled: true
+          operator: GreaterThan
+          threshold: 70
+          contactEmails:
+            - 'elias.reichl@icloud.com'
+          thresholdType: Actual
+        Forecasted_GreaterThan_90_Percent:
+          enabled: true
+          operator: GreaterThan
+          threshold: 90
+          contactEmails:
+            - 'elias.reichl@icloud.com'
+          thresholdType: Forecasted
