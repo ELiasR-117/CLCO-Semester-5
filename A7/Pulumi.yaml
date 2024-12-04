@@ -1,0 +1,166 @@
+name: A7_CLCO
+runtime: yaml
+
+resources:
+  resourceGroup:
+    type: azure-native:resources:ResourceGroup
+
+  virtualNetwork:
+    type: azure-native:network:VirtualNetwork
+    name: myVNet
+    properties:
+      resourceGroupName: ${resourceGroup.name}
+      location: ${azure-native:location}
+      addressSpace:
+        addressPrefixes:
+          - 10.0.0.0/16
+
+  appSubnet:
+    type: azure-native:network:Subnet
+    properties:
+      subnetName: appSubnet
+      resourceGroupName: ${resourceGroup.name}
+      virtualNetworkName: ${virtualNetwork.name}
+      addressPrefix: 10.0.0.0/24
+      delegations:
+        - name: delegation
+          serviceName: Microsoft.Web/serverfarms
+      privateEndpointNetworkPolicies: Enabled
+
+  endpointSubnet:
+    type: azure-native:network:Subnet
+    name: endpointSubnet
+    properties:
+      resourceGroupName: ${resourceGroup.name}
+      virtualNetworkName: ${virtualNetwork.name}
+      addressPrefix: 10.0.1.0/24
+      privateEndpointNetworkPolicies: Disabled
+
+  dnsZone:
+    type: azure-native:network:PrivateZone
+    name: privatelink.cognitiveservices.azure.com
+    properties:
+      privateZoneName: privatelink.cognitiveservices.azure.com
+      resourceGroupName: ${resourceGroup.name}
+      location: global
+
+  languageAccount:
+    type: azure-native:cognitiveservices:Account
+    name: myLanguageService
+    properties:
+      identity:
+          type: SystemAssigned
+      resourceGroupName: ${resourceGroup.name}
+      location: ${azure-native:location}
+      kind: TextAnalytics  
+      sku:
+        name: F0
+      properties:
+        publicNetworkAccess: Disabled
+        customSubDomainName: myLanguageService1234
+
+  dnsZoneVirtualNetworkLink:
+    type: azure-native:network:VirtualNetworkLink
+    name: cognitiveservices-zonelink
+    properties:
+      resourceGroupName: ${resourceGroup.name}
+      privateZoneName: ${dnsZone.name}
+      location: global
+      virtualNetwork:
+        id: ${virtualNetwork.id}
+      registrationEnabled: false
+
+  privateEndpoint:
+    type: azure-native:network:PrivateEndpoint
+    name: languagePrivateEndpoint
+    properties:
+      resourceGroupName: ${resourceGroup.name}
+      location: ${azure-native:location}
+      subnet:
+        id: ${endpointSubnet.id}
+      privateLinkServiceConnections:
+        - name: languageServiceConnection
+          privateLinkServiceId: ${languageAccount.id}
+          groupIds:
+            - account
+
+  privateDnsZoneGroup:
+    type: azure-native:network:PrivateDnsZoneGroup
+    name: languagePrivateDnsZoneGroup
+    properties:
+      resourceGroupName: ${resourceGroup.name}
+      privateEndpointName: ${privateEndpoint.name}
+      privateDnsZoneConfigs:
+        - name: config
+          privateDnsZoneId: ${dnsZone.id}
+
+  appServicePlan:
+    type: azure-native:web:AppServicePlan
+    name: myWebApp-plan
+    properties:
+      resourceGroupName: ${resourceGroup.name}
+      location: ${azure-native:location}
+      sku:
+        name: B1
+        tier: Basic
+      kind: linux
+      reserved: true
+
+  webApp:
+    type: azure-native:web:WebApp
+    name: myWebApp
+    properties:
+      resourceGroupName: ${resourceGroup.name}
+      location: ${azure-native:location}
+      serverFarmId: ${appServicePlan.id}
+      httpsOnly: true
+      kind: app,linux
+      siteConfig:
+        linuxFxVersion: "PYTHON|3.8" 
+        appSettings:
+          - name: AZ_ENDPOINT
+            value:
+              fn::join:
+                  - ""
+                  - - "https://"
+                    - mylanguageservice1234.
+                    - "cognitiveservices.azure.com/"
+          - name: AZ_KEY
+            value: ${accountKeys.key1}
+          - name: WEBSITE_RUN_FROM_PACKAGE
+            value: "0"
+        alwaysOn: true
+        ftpsState: Disabled
+
+  vnetIntegration:
+    type: azure-native:web:WebAppSwiftVirtualNetworkConnection
+    properties:
+      name: ${webApp.name}
+      resourceGroupName: ${resourceGroup.name}
+      subnetResourceId: ${appSubnet.id}
+
+  sourceControl:
+    type: azure-native:web:WebAppSourceControl
+    properties:
+      name: ${webApp.name}
+      resourceGroupName: ${resourceGroup.name}
+      repoUrl: ${my:repoUrl}
+      branch: ${my:branch}
+      isManualIntegration: true 
+      deploymentRollbackEnabled: false
+      isGitHubAction: false
+
+config:
+  azure-native:location: WestUS
+  my:repoUrl: https://github.com/ELiasR-117/clco-demo.git
+  my:branch: main
+
+
+variables:
+  accountKeys:
+    fn::invoke:
+      function: azure-native:cognitiveservices:listAccountKeys
+      arguments:
+        resourceGroupName: ${resourceGroup.name}
+        accountName: ${languageAccount.name}
+    
